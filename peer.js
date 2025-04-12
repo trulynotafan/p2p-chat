@@ -22,14 +22,10 @@ const topic_key = crypto.discoveryKey(hashedTopic);
   START
 ******************************************************************************/
 
-
-
 start();
 async function start() {
     const args = process.argv.slice(2);
     let name = 'client-' + Math.random().toString(36).substring(2, 8);
-
-    //Right now I have removed the hrtime to fix bugs regarding connections, will add it soon. 
     
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--name' && i + 1 < args.length) {
@@ -41,6 +37,7 @@ async function start() {
     const label = `\x1b[${process.pid % 2 ? 31 : 34}m[${name}]\x1b[0m`;
     console.log(label, 'start');
 
+    // Load or generate mnemonic
     let mnemonic;
     try {
         mnemonic = await fs.readFile(`mnemonic-${name}.txt`, 'utf-8');
@@ -65,7 +62,20 @@ async function start() {
     const socket = new ws.Socket({ port: PORT });
     const connectedPeers = new Set();
 
-    let lastTopicLookupLog = 0;
+    // First log the initial topic lookup before setting up the stdin
+    console.log(label, "Looking up topic " + topic);
+    let lastTopicLookupLog = Date.now();
+    
+    // Join the topic
+    const discovery = swarm.join(topic_key, { server: true, client: true });
+    await discovery.flushed();
+    
+    // Now that we've joined and logged the initial lookup, set up stdin
+    process.stdin.setEncoding('utf8');
+    process.stdin.resume();
+    console.log(label, "Type your message and press Enter to send:");
+    
+    // Set up periodic topic lookup logging
     setInterval(() => {
         const now = Date.now();
         if (now - lastTopicLookupLog >= 120000) {
@@ -73,10 +83,9 @@ async function start() {
             lastTopicLookupLog = now;
         }
     }, 10000);
-
-    const discovery = swarm.join(topic_key, { server: true, client: true });
-    await discovery.flushed();
     
+    // Set up input handling
+    setupCLIInput(socket, name, label);
     
     socket.on('connect', () => {
         console.log(label, '📡 Connected to WebSocket server');
@@ -95,15 +104,26 @@ async function start() {
 
         socket.write(JSON.stringify({
             type: 'announce',
-            topic: topic
+            topic: topic,
+            isBrowser: false
         }));
-        
-        // Send initial greeting after connection is established
-        setTimeout(() => {
-            sendMessageToAllPeers(socket, name, "Hi from native client!");
-            console.log(label, "Sent greeting message to all peers");
-        }, 1000);
     });
+
+    function setupCLIInput(socket, name, label) {
+        process.stdin.on('data', (input) => {
+            if (input.toString() === '\u0003') process.exit();
+            
+            const trimmedInput = input.toString().trim();
+            if (trimmedInput !== '') {
+                if (socket.readyState === ws.OPEN) {
+                    sendMessageToAllPeers(socket, name, trimmedInput);
+                    console.log(label, `You: ${trimmedInput}`);
+                } else {
+                    console.log(label, "Not connected to server yet. Your message will not be sent.");
+                }
+            }
+        });
+    }
 
     socket.on('data', (data) => {
         try {
@@ -144,7 +164,6 @@ async function start() {
             cb: async () => {
                 const channel = create_and_open_channel({ mux, opts: { protocol: 'peer-type' } });
                 if (!channel) return;
-    
                 const message = channel.addMessage({
                     encoding: c.string,
                     onmessage: async (msg) => {
@@ -152,7 +171,6 @@ async function start() {
                         handle_connection(socket, store);
                     }
                 });
-    
                 message.send('client');
             }
         });
@@ -171,17 +189,13 @@ async function start() {
                     encoding: c.string,
                     onmessage: async (peerBookKey) => {
                         console.log(label, `📖 Received book key from peer ${peerName}:`, peerBookKey);
-    
                         try {
                             const peerCore = store.get(b4a.from(peerBookKey, 'hex'));
                             await peerCore.ready();
                             peerCore.replicate(replicationStream);
-    
                             await new Promise(resolve => setTimeout(resolve, 1000));
-    
                             const length = peerCore.length;
                             console.log(label, `Found ${length} previous entries from peer ${peerName}`);
-    
                             for (let i = 0; i < length; i++) {
                                 try {
                                     const data = await peerCore.get(i);
@@ -211,12 +225,6 @@ async function start() {
             case 'peer-connected':
                 console.log(label, "Peer " + data.peerId + " connected");
                 connectedPeers.add(data.peerId);
-                
-                // Send greeting to newly connected peer
-                setTimeout(() => {
-                    sendMessageToPeer(socket, name, data.peerId, "Hi from native client!");
-                    console.log(label, `Sent greeting to new peer ${data.peerId}`);
-                }, 500);
                 break;
             case 'peer-disconnected':
                 console.log(label, "Peer " + data.peerId + " disconnected");
@@ -230,14 +238,6 @@ async function start() {
                     console.log(label, "Adding peer " + peerId + " to connected peers");
                     connectedPeers.add(peerId);
                 });
-                
-                
-                if (data.peers.length > 0) {
-                    setTimeout(() => {
-                        sendMessageToAllPeers(socket, name, "Hi from native client!");
-                        console.log(label, "Sent greeting message to all peers");
-                    }, 500);
-                }
                 break;
             case 'message':
                 console.log(label, `Message from ${data.isBrowser ? 'browser' : 'native'} peer ${data.fromPeer}: ${data.data}`);
@@ -245,46 +245,23 @@ async function start() {
         }
     }
 
-
-    
-    // Function to send a message to a specific peer
-    function sendMessageToPeer(socket, fromPeer, toPeer, message) {
-        if (socket.readyState === ws.OPEN) {
-            socket.write(JSON.stringify({
-                type: 'message',
-                fromPeer: fromPeer,
-                toPeer: toPeer,
-                data: message,
-                isBrowser: false  
-            }));
-        }
-    }
-
-/******************************************************************************
-  HELPER
-******************************************************************************/
-
-
     // Function to send a message to all connected peers
     function sendMessageToAllPeers(socket, fromPeer, message) {
         if (socket.readyState === ws.OPEN) {
             socket.write(JSON.stringify({
-                type: 'broadcast',
+                type: 'message',
                 fromPeer: fromPeer,
                 data: message,
                 isBrowser: false  
             }));
         }
     }
-    
-    
-    setInterval(() => {
-        if (connectedPeers.size > 1) { // If there are peers other than the server
-            sendMessageToAllPeers(socket, name, "Hi from native client!");
-            console.log(label, "Sent periodic greeting to all peers");
-        }
-    }, 60000);
 }
+
+
+/******************************************************************************
+  HELPER
+******************************************************************************/
 
 function create_noise_keypair({namespace, seed, name}) {
     const noiseSeed = deriveSeed(seed, namespace, name);
