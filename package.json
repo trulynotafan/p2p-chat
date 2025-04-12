@@ -6,7 +6,8 @@
         "start": "bare relay-server.js",
         "web": "budo web/index.js:web/bundle.js --port 3000 --live --open --dir web",
         "build": "browserify web/index.js > web/bundle.js && copy web\\index.html web\\dist\\index.html",
-        "dev": "npm run build && npm run web"
+        "dev": "npm run build && npm run web",
+        "reset": "rm -rf ./storage-*"
     },
     "dependencies": {
         "@hyperswarm/dht-relay": "^0.4.3",
