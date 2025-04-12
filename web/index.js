@@ -1,9 +1,9 @@
 // Browser peer implementation
 const b4a = require('b4a');
 const sodium = require('sodium-universal');
-const crypto = require("hypercore-crypto")
+const crypto = require("hypercore-crypto");
 
-// Constants
+
 const PORT = 8080;
 const topic = 'just-chating';
 const hashedTopic = b4a.alloc(32);
@@ -14,62 +14,30 @@ const topic_key = crypto.discoveryKey(hashedTopic);
 let connectedPeers = new Set(['server']);
 let userName = '';
 let socket = null;
-
-// DOM elements
 let statusElement, messagesElement, peerCountElement, messageInput, sendButton;
 
-// Create a simple input box for username
+// Create a username input prompt
 function createUsernameInput() {
   const overlay = document.createElement('div');
-  overlay.style.position = 'fixed';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100%';
-  overlay.style.height = '100%';
-  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-  overlay.style.display = 'flex';
-  overlay.style.justifyContent = 'center';
-  overlay.style.alignItems = 'center';
-  overlay.style.zIndex = '1000';
+  overlay.style = 'position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:1000;';
   
   const inputBox = document.createElement('div');
-  inputBox.style.backgroundColor = '#2c3e50';
-  inputBox.style.padding = '20px';
-  inputBox.style.borderRadius = '8px';
-  inputBox.style.width = '300px';
+  inputBox.style = 'background-color:#2c3e50;padding:20px;border-radius:8px;width:300px;';
   
   const title = document.createElement('h2');
   title.textContent = 'Enter Your Name';
-  title.style.color = '#ffffff';
-  title.style.marginTop = '0';
-  title.style.textAlign = 'center';
+  title.style = 'color:#fff;margin-top:0;text-align:center;';
   
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Your name';
-  input.style.width = '100%';
-  input.style.padding = '10px';
-  input.style.marginBottom = '15px';
-  input.style.border = 'none';
-  input.style.borderRadius = '4px';
-  input.style.backgroundColor = '#34495e';
-  input.style.color = '#ffffff';
-  input.style.boxSizing = 'border-box';
+  input.style = 'width:100%;padding:10px;margin-bottom:15px;border:none;border-radius:4px;background-color:#34495e;color:#fff;box-sizing:border-box;';
   
   const button = document.createElement('button');
   button.textContent = 'Join Chat';
-  button.style.width = '100%';
-  button.style.padding = '10px';
-  button.style.border = 'none';
-  button.style.borderRadius = '4px';
-  button.style.backgroundColor = '#3498db';
-  button.style.color = '#ffffff';
-  button.style.cursor = 'pointer';
-  button.style.fontWeight = 'bold';
+  button.style = 'width:100%;padding:10px;border:none;border-radius:4px;background-color:#3498db;color:#fff;cursor:pointer;font-weight:bold;';
   
-  inputBox.appendChild(title);
-  inputBox.appendChild(input);
-  inputBox.appendChild(button);
+  inputBox.append(title, input, button);
   overlay.appendChild(inputBox);
   document.body.appendChild(overlay);
   input.focus();
@@ -112,18 +80,13 @@ window.onhashchange = function() {
   }
 };
 
-// Initialize DOM elements
-function initDOMElements() {
+// Initialize the browser peer
+async function init() {
   statusElement = document.getElementById('status');
   messagesElement = document.getElementById('messages');
   peerCountElement = document.getElementById('peer-count');
   messageInput = document.getElementById('message-input');
   sendButton = document.getElementById('send-button');
-}
-
-// Initialize the browser peer
-async function init() {
-  initDOMElements();
   
   userName = await getUserName();
   statusElement.textContent = `Connected as: ${userName}`;
@@ -137,7 +100,6 @@ async function init() {
   
   socket.onopen = () => {
     statusElement.textContent = `Connected as: ${userName}`;
-    connectedPeers.add('server');
     updatePeerCount();
     
     const announceMsg = {
@@ -149,16 +111,7 @@ async function init() {
     };
     
     socket.send(JSON.stringify(announceMsg));
-    
-    setInterval(() => {
-      socket.send(JSON.stringify({
-        type: 'announce',
-        topic: topic,
-        clientType: 'browser',
-        name: userName,
-        publicKey: b4a.toString(publicKey, 'hex')
-      }));
-    }, 30000);
+    setInterval(() => socket.send(JSON.stringify(announceMsg)), 30000);
   };
   
   socket.onmessage = (event) => {
@@ -243,8 +196,7 @@ async function init() {
     textSpan.className = 'text';
     textSpan.textContent = type === 'peer' ? text.split(':').slice(1).join(':').trim() : text;
     
-    messageDiv.appendChild(senderSpan);
-    messageDiv.appendChild(textSpan);
+    messageDiv.append(senderSpan, textSpan);
     messagesElement.appendChild(messageDiv);
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
