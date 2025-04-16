@@ -22,7 +22,8 @@
         "hyperdht": "^6.20.1",
         "hyperswarm": "4.10.1",
         "protomux": "^3.10.1",
-        "sodium-universal": "^4.0.1"
+        "sodium-universal": "^4.0.1",
+        "sodium-javascript": "0.8.0"
     },
     "devDependencies": {
         "browserify": "^17.0.1",
