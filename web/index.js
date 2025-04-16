@@ -1,70 +1,129 @@
-// Browser peer implementation
+// ============= Backend/Network Configuration and Logic =============
 const b4a = require('b4a');
 const sodium = require('sodium-universal');
-const crypto = require("hypercore-crypto");
 
+//Taking port as arguments
+const args = process.argv.slice(2);
+let port = 3000; // default
 
-const PORT = 8080;
+const portIndex = args.indexOf('--port');
+if (portIndex !== -1 && args[portIndex + 1]) {
+  port = parseInt(args[portIndex + 1], 10);
+}
 const topic = 'just-chating';
-const hashedTopic = b4a.alloc(32);
-sodium.crypto_generichash(hashedTopic, b4a.from(topic));
-const topic_key = crypto.discoveryKey(hashedTopic);
 
-// Track connected peers
-let connectedPeers = new Set(['server']);
-let userName = '';
+// Global state
+let connected_peers = new Set();
+let user_name = '';
 let socket = null;
-let statusElement, messagesElement, peerCountElement, messageInput, sendButton;
+
+// Network message handler
+function handle_message(message) {
+  switch (message.type) {
+    case 'peer-connected':
+      add_message(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.peerId} connected`, 'system');
+      connected_peers.add(message.peerId);
+      update_peer_count();
+      break;
+    case 'peer-disconnected':
+      add_message(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.peerId} disconnected`, 'system');
+      connected_peers.delete(message.peerId);
+      update_peer_count();
+      break;
+    case 'peers':
+      add_message(`Found ${message.peers.length} peers for topic ${message.topic}`, 'system');
+      connected_peers.clear();
+      message.peers.forEach(peer_id => connected_peers.add(peer_id));
+      update_peer_count();
+      break;
+    case 'message':
+      if (message.fromPeer === user_name) {
+        add_message(`You: ${message.data}`, 'self');
+      } else {
+        add_message(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.fromPeer}: ${message.data}`, 'peer');
+      }
+      break;
+   }
+}
+
+// Initialize WebSocket connection
+async function init_websocket(public_key) {
+  socket = new WebSocket(`ws://localhost:8080`);
+  
+  socket.onopen = () => {
+    status_element.textContent = `Connected as: ${user_name}`;
+    update_peer_count();
+    
+    const announce_msg = {
+      type: 'announce',
+      topic,
+      isBrowser: true,
+      name: user_name,
+      publicKey: b4a.toString(public_key, 'hex')
+    };
+    
+    socket.send(JSON.stringify(announce_msg));
+    setInterval(() => socket.send(JSON.stringify(announce_msg)), 30000);
+  };
+  
+  socket.onmessage = (event) => {
+    try {
+      if (event.data instanceof Blob) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try { handle_message(JSON.parse(reader.result)); } catch (err) {}
+        };
+        reader.readAsText(event.data);
+      } else {
+        handle_message(JSON.parse(event.data));
+      }
+    } catch (err) {}
+  };
+  
+  socket.onclose = () => {
+    status_element.textContent = `Disconnected (${user_name})`;
+    connected_peers.clear();
+    update_peer_count();
+  };
+  
+}
+
+// ============= UI Elements and Handlers =============
+let status_element, messages_element, peer_count_element, message_input, send_button;
 
 // Create a username input prompt
-function createUsernameInput() {
-  const overlay = document.createElement('div');
-  overlay.style = 'position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:1000;';
-  
-  const inputBox = document.createElement('div');
-  inputBox.style = 'background-color:#2c3e50;padding:20px;border-radius:8px;width:300px;';
-  
-  const title = document.createElement('h2');
-  title.textContent = 'Enter Your Name';
-  title.style = 'color:#fff;margin-top:0;text-align:center;';
-  
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Your name';
-  input.style = 'width:100%;padding:10px;margin-bottom:15px;border:none;border-radius:4px;background-color:#34495e;color:#fff;box-sizing:border-box;';
-  
-  const button = document.createElement('button');
-  button.textContent = 'Join Chat';
-  button.style = 'width:100%;padding:10px;border:none;border-radius:4px;background-color:#3498db;color:#fff;cursor:pointer;font-weight:bold;';
-  
-  inputBox.append(title, input, button);
-  overlay.appendChild(inputBox);
+function create_username_input() {
+  const template = document.getElementById('username-prompt');
+  const overlay = template.content.cloneNode(true);
   document.body.appendChild(overlay);
+  
+  const input = document.getElementById('username-input');
+  const button = document.getElementById('username-submit');
   input.focus();
   
   return new Promise((resolve) => {
-    const handleSubmit = () => {
+    const handle_submit = () => {
       const name = input.value.trim();
       if (name) {
-        document.body.removeChild(overlay);
+        document.querySelector('.username-overlay').remove();
         resolve(name);
       } else {
         input.style.border = '1px solid #e74c3c';
       }
     };
     
-    button.addEventListener('click', handleSubmit);
+    button.addEventListener('click', handle_submit);
     input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') handleSubmit();
+      if (e.key === 'Enter') handle_submit();
     });
   });
 }
 
 // Get user name from URL hash or input box
-async function getUserName() {
+async function get_user_name() {
   let name = location.hash.substring(1);
   if (!name) {
-    name = await createUsernameInput();
+    name = await create_username_input();
     if (!name) name = 'browser-' + Math.random().toString(36).substring(2, 8);
     location.hash = name;
   }
@@ -73,160 +132,87 @@ async function getUserName() {
 
 // Listen for hash changes
 window.onhashchange = function() {
-  const newName = location.hash.substring(1);
-  if (newName) {
-    userName = newName;
-    statusElement.textContent = `Connected as: ${newName}`;
+  const new_name = location.hash.substring(1);
+  if (new_name) {
+    user_name = new_name;
+    status_element.textContent = `Connected as: ${new_name}`;
   }
 };
 
-// Initialize the browser peer
+// Update the peer count display
+function update_peer_count() {
+  peer_count_element.textContent = `Peers: ${connected_peers.size}`;
+  status_element.textContent = `Connected as: ${user_name}`;
+}
+
+// Add a message to the messages element
+function add_message(text, type = 'message') {
+  const message_div = document.createElement('div');
+  message_div.className = `message ${type}`;
+  
+  const sender_span = document.createElement('div');
+  sender_span.className = 'sender';
+  sender_span.textContent = type === 'system' ? 'System' : 
+                          type === 'self' ? 'You' : 
+                          type === 'peer' ? text.split(':')[0] : '';
+  
+  const text_span = document.createElement('div');
+  text_span.className = 'text';
+  text_span.textContent = type === 'peer' ? text.split(':').slice(1).join(':').trim() : text;
+  
+  message_div.append(sender_span, text_span);
+  messages_element.appendChild(message_div);
+  messages_element.scrollTop = messages_element.scrollHeight;
+}
+
+// Send a message
+function send_message() {
+  const text = message_input.value.trim();
+  if (text) {
+    socket.send(JSON.stringify({
+      type: 'message',
+      topic,
+      data: text,
+      fromPeer: user_name,
+      isBrowser: true
+    }));
+    
+    add_message(`You: ${text}`, 'self');
+    message_input.value = '';
+  }
+}
+
+// ============= Application Initialization =============
 async function init() {
-  statusElement = document.getElementById('status');
-  messagesElement = document.getElementById('messages');
-  peerCountElement = document.getElementById('peer-count');
-  messageInput = document.getElementById('message-input');
-  sendButton = document.getElementById('send-button');
+  // Initialize UI elements
+  status_element = document.getElementById('status');
+  messages_element = document.getElementById('messages');
+  peer_count_element = document.getElementById('peer-count');
+  message_input = document.getElementById('message-input');
+  send_button = document.getElementById('send-button');
   
-  userName = await getUserName();
-  statusElement.textContent = `Connected as: ${userName}`;
+  // Get username
+  user_name = await get_user_name();
+  status_element.textContent = `Connected as: ${user_name}`;
   
-  const publicKey = b4a.alloc(32);
-  const secretKey = b4a.alloc(64);
-  sodium.crypto_sign_keypair(publicKey, secretKey);
+  // Initialize cryptography
+  const public_key = b4a.alloc(32);
+  const secret_key = b4a.alloc(64);
+  sodium.crypto_sign_keypair(public_key, secret_key);
   
-  // Connect to the WebSocket server
-  socket = new WebSocket(`ws://localhost:${PORT}`);
+  // Initialize WebSocket
+  await init_websocket(public_key);
   
-  socket.onopen = () => {
-    statusElement.textContent = `Connected as: ${userName}`;
-    updatePeerCount();
-    
-    const announceMsg = {
-      type: 'announce',
-      topic: topic,
-      clientType: 'browser',
-      name: userName,
-      publicKey: b4a.toString(publicKey, 'hex')
-    };
-    
-    socket.send(JSON.stringify(announceMsg));
-    setInterval(() => socket.send(JSON.stringify(announceMsg)), 30000);
-  };
-  
-  socket.onmessage = (event) => {
-    try {
-      if (event.data instanceof Blob) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try { handleMessage(JSON.parse(reader.result)); } catch (err) {}
-        };
-        reader.readAsText(event.data);
-      } else {
-        handleMessage(JSON.parse(event.data));
-      }
-    } catch (err) {}
-  };
-  
-  socket.onclose = () => {
-    statusElement.textContent = `Disconnected (${userName})`;
-    connectedPeers.clear();
-    updatePeerCount();
-  };
-  
-  socket.onerror = (err) => {
-    statusElement.textContent = `Error: ${err.message || 'Unknown error'}`;
-  };
-  
-  // Handle messages from the server
-  function handleMessage(message) {
-    switch (message.type) {
-      case 'peer-connected':
-        addMessage(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.peerId} connected`, 'system');
-        connectedPeers.add(message.peerId);
-        updatePeerCount();
-        break;
-      case 'peer-disconnected':
-        addMessage(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.peerId} disconnected`, 'system');
-        connectedPeers.delete(message.peerId);
-        updatePeerCount();
-        break;
-      case 'peers':
-        addMessage(`Found ${message.peers.length} peers for topic ${message.topic}`, 'system');
-        connectedPeers.clear();
-        connectedPeers.add('server');
-        message.peers.forEach(peerId => connectedPeers.add(peerId));
-        updatePeerCount();
-        break;
-      case 'message':
-        if (message.fromPeer === userName) {
-          addMessage(`You: ${message.data}`, 'self');
-        } else {
-          addMessage(`${message.isBrowser ? 'browser' : 'Native'} peer ${message.fromPeer}: ${message.data}`, 'peer');
-        }
-        break;
-      case 'uptime':
-        if (!connectedPeers.has(message.peer)) {
-          addMessage(`👋 Hi from ${message.peer}!`, 'system');
-          connectedPeers.add(message.peer);
-          updatePeerCount();
-        }
-        break;
-    }
-  }
-  
-  // Update the peer count display
-  function updatePeerCount() {
-    peerCountElement.textContent = `Peers: ${connectedPeers.size}`;
-    statusElement.textContent = `Connected as: ${userName}`;
-  }
-  
-  // Add a message to the messages element
-  function addMessage(text, type = 'message') {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}`;
-    
-    const senderSpan = document.createElement('div');
-    senderSpan.className = 'sender';
-    senderSpan.textContent = type === 'system' ? 'System' : 
-                            type === 'self' ? 'You' : 
-                            type === 'peer' ? text.split(':')[0] : '';
-    
-    const textSpan = document.createElement('div');
-    textSpan.className = 'text';
-    textSpan.textContent = type === 'peer' ? text.split(':').slice(1).join(':').trim() : text;
-    
-    messageDiv.append(senderSpan, textSpan);
-    messagesElement.appendChild(messageDiv);
-    messagesElement.scrollTop = messagesElement.scrollHeight;
-  }
-  
-  // Send a message
-  function sendMessage() {
-    const text = messageInput.value.trim();
-    if (text) {
-      socket.send(JSON.stringify({
-        type: 'message',
-        topic: topic,
-        data: text,
-        fromPeer: userName
-      }));
-      
-      addMessage(`You: ${text}`, 'self');
-      messageInput.value = '';
-    }
-  }
-  
-  // Add event listeners
-  sendButton.addEventListener('click', sendMessage);
-  messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
+  // Add event listeners for UI
+  send_button.addEventListener('click', send_message);
+  message_input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') send_message();
   });
 }
 
 // Wait for DOM to be fully loaded before starting
 document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => {
-    if (statusElement) statusElement.textContent = `Error: ${err.message || 'Failed to initialize'}`;
+    if (status_element) status_element.textContent = `Error: ${err.message || 'Failed to initialize'}`;
   });
 });
