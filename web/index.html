@@ -64,13 +64,21 @@
       word-wrap: break-word;
     }
 
-    .message.sent {
+    .message.system {
+      background-color: var(--message-bg);
+      align-self: center;
+      font-style: italic;
+      opacity: 0.8;
+      max-width: 90%;
+    }
+
+    .message.self {
       background-color: var(--message-sent);
       align-self: flex-end;
       border-bottom-right-radius: 0.25rem;
     }
 
-    .message.received {
+    .message.peer {
       background-color: var(--message-received);
       align-self: flex-start;
       border-bottom-left-radius: 0.25rem;
@@ -80,6 +88,11 @@
       font-size: 0.8rem;
       opacity: 0.7;
       margin-bottom: 0.25rem;
+      font-weight: bold;
+    }
+
+    .message .text {
+      word-break: break-word;
     }
 
     .footer {
@@ -150,13 +163,73 @@
       --input-bg: #ffffff;
       --border-color: #d0d0d0;
     }
+
+    /* Username prompt overlay styles */
+    .username-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .username-box {
+      background-color: #2c3e50;
+      padding: 20px;
+      border-radius: 8px;
+      width: 300px;
+    }
+
+    .username-box h2 {
+      color: #fff;
+      margin-top: 0;
+      text-align: center;
+    }
+
+    .username-box input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border: none;
+      border-radius: 4px;
+      background-color: #34495e;
+      color: #fff;
+      box-sizing: border-box;
+    }
+
+    .username-box button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      background-color: #3498db;
+      color: #fff;
+      cursor: pointer;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
+  <!-- Username prompt template (hidden by default) -->
+  <template id="username-prompt">
+    <div class="username-overlay">
+      <div class="username-box">
+        <h2>Enter Your Name</h2>
+        <input type="text" placeholder="Your name" id="username-input">
+        <button id="username-submit">Join Chat</button>
+      </div>
+    </div>
+  </template>
+
   <div class="header">
     <div id="status" class="status">Connecting...</div>
     <div id="peer-count" class="peer-count">Peers: 0</div>
-    <button id="theme-toggle" title="Toggle theme">🌙</button>
+    <button id="theme-toggle" title="Toggle theme"></button>
   </div>
   <div id="messages" class="messages"></div>
   <div class="footer">
