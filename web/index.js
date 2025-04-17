@@ -5,12 +5,10 @@ const DHT = require('@hyperswarm/dht-relay')
 const Stream = require('@hyperswarm/dht-relay/ws')
 const Hyperswarm = require('hyperswarm')
 
-// Setup DHT topic
-const topic = b4a.alloc(32)
-sodium.crypto_generichash(topic, b4a.from('just-chating'))
+const topic_hex = 'ffb09601562034ee8394ab609322173b641ded168059d256f6a3d959b2dc6021'
+const topic = b4a.from(topic_hex, 'hex')
 
 function init() {
-  // Create username prompt
   const overlay = document.createElement('div')
   overlay.className = 'username-overlay'
   overlay.innerHTML = `
@@ -21,10 +19,10 @@ function init() {
     </div>`
   document.body.appendChild(overlay)
   
-  const nameInput = document.getElementById('username-input')
-  const nameSubmit = document.getElementById('username-submit')
+  const name_input = document.getElementById('username-input')
+  const name_submit = document.getElementById('username-submit')
   
-  function startChat(name) {
+  function start_chat(name) {
     overlay.remove()
     document.getElementById('status').textContent = name
     location.hash = name
@@ -35,21 +33,6 @@ function init() {
     
     const socket = new WebSocket('ws://localhost:8080')
     
-    // Handle incoming WebSocket messages
-    socket.addEventListener('message', event => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'chat' && msg.from !== name) {
-          const div = document.createElement('div')
-          div.textContent = `${msg.from}: ${msg.message}`
-          messages.appendChild(div)
-          messages.scrollTop = messages.scrollHeight
-              }
-            } catch (err) {
-        console.error('Failed to parse message:', err)
-      }
-    })
-
     const key = { publicKey: b4a.alloc(32), secretKey: b4a.alloc(64) }
     sodium.crypto_sign_keypair(key.publicKey, key.secretKey)
     
@@ -58,28 +41,48 @@ function init() {
       keyPair: key 
     })
     
-    swarm.join(topic)
+    swarm.join(topic, { server: true, client: true })
+    
+    function display_message(msg) {
+      if (msg.type === 'chat' && msg.from !== name) {
+        const div = document.createElement('div')
+        div.textContent = `${msg.from}: ${msg.message}`
+        messages.appendChild(div)
+        messages.scrollTop = messages.scrollHeight
+      }
+    }
+    
+    socket.addEventListener('message', event => {
+      try {
+        display_message(JSON.parse(event.data))
+      } catch {}
+    })
+    
     swarm.on('connection', conn => {
       conn.on('data', data => {
         try {
-          const msg = JSON.parse(data.toString())
-          if (msg.type === 'chat' && msg.from !== name) {
-            const div = document.createElement('div')
-            div.textContent = `${msg.from}: ${msg.message}`
-            messages.appendChild(div)
-            messages.scrollTop = messages.scrollHeight
-            }
-          } catch (err) {
-          console.error('Failed to parse peer message:', err)
-        }
+          display_message(JSON.parse(data.toString()))
+        } catch {}
       })
     })
     
-    function sendMessage() {
+    function send_message() {
       const text = input.value.trim()
       if (text) {
-        const message = JSON.stringify({ type: 'chat', from: name, message: text })
-        socket.send(message)
+        const message = JSON.stringify({
+          type: 'chat',
+          from: name,
+          message: text
+        })
+        
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(message)
+        }
+        
+        for (const conn of swarm.connections) {
+          conn.write(message)
+        }
+        
         const div = document.createElement('div')
         div.className = 'self'
         div.textContent = `${name}: ${text}`
@@ -89,29 +92,26 @@ function init() {
       }
     }
     
-    // Add event listeners
-    send.addEventListener('click', sendMessage)
+    send.addEventListener('click', send_message)
     input.addEventListener('keypress', e => {
-      if (e.key === 'Enter') sendMessage()
+      if (e.key === 'Enter') send_message()
     })
   }
   
-  // Check for existing hash
-  const existingName = location.hash.slice(1)
-  if (existingName) {
-    nameInput.value = existingName
+  const existing_name = location.hash.slice(1)
+  if (existing_name) {
+    name_input.value = existing_name
   }
   
-  // Handle username input
-  nameSubmit.addEventListener('click', () => {
-    const name = nameInput.value.trim()
-    if (name) startChat(name)
+  name_submit.addEventListener('click', () => {
+    const name = name_input.value.trim()
+    if (name) start_chat(name)
   })
   
-  nameInput.addEventListener('keypress', e => {
+  name_input.addEventListener('keypress', e => {
     if (e.key === 'Enter') {
-      const name = nameInput.value.trim()
-      if (name) startChat(name)
+      const name = name_input.value.trim()
+      if (name) start_chat(name)
     }
   })
 }
