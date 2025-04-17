@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "description": "DHT-Relay test for p2p communication",
     "scripts": {
-        "start": "bare relay-server.js",
+        "start": "node relay-server.js",
         "web": "budo web/index.js:web/bundle.js --live --open --dir web",
         "bare": "bare peer.js",
         "build": "browserify web/index.js > web/bundle.js",
