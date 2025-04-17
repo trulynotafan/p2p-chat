@@ -1,22 +1,14 @@
 const b4a = require('b4a');
 const hyperswarm = require('hyperswarm');
 const sodium = require('sodium-universal');
-const crypto = require('hypercore-crypto');
 const process = require('bare-process');
-const ws = require('bare-ws');
 
-// Configure basic settings
-const port = 8080;
-const topic = 'just-chating';
-const hashed_topic = b4a.alloc(32);
-sodium.crypto_generichash(hashed_topic, b4a.from(topic));
-const topic_key = crypto.discoveryKey(hashed_topic);
+const topic_hex = 'ffb09601562034ee8394ab609322173b641ded168059d256f6a3d959b2dc6021'
+const topic = b4a.from(topic_hex, 'hex')
 
-// Start the application
 start();
 
 async function start() {
-    // Parse name from command line arguments or generate a random one
     const args = process.argv.slice(2);
     let name = 'client-' + Math.random().toString(36).substring(2, 7);
     
@@ -29,34 +21,25 @@ async function start() {
     
     console.log(`[${name}] Starting...`);
 
-    // Generate keypair
     const key_pair = generate_keypair();
     const swarm = new hyperswarm({ keyPair: key_pair });
     
-    // Connect to websocket server
-    const socket = new ws.Socket({ port });
-    socket.on('error', () => {
-        console.log(`[${name}] WebSocket connection failed`);
-        process.exit(1);
-    });
-
-    // Join the swarm with the topic
-    swarm.join(topic_key, { server: true, client: true });
-    console.log(`[${name}] Joined swarm with topic: ${topic}`);
+    swarm.join(topic, { server: true, client: true });
+    console.log(`[${name}] Joined swarm with topic: ${topic_hex}`);
     
-    // Handle incoming messages
-    socket.on('data', (data) => {
-        try {
-            const message = JSON.parse(data.toString());
-            if (message.type === 'chat' && message.from !== name) {
-                console.log(`[${message.from}]: ${message.message}`);
-            }
-        } catch (err) {
-            // Silently ignore parsing errors
-        }
-    });
+    swarm.on('connection', (conn, info) => {
+        console.log(`[${name}] Peer connected`);
+        
+        conn.on('data', (data) => {
+            try {
+                const message = JSON.parse(data.toString());
+                if (message.type === 'chat' && message.from !== name) {
+                    console.log(`[${message.from}]: ${message.message}`);
+                }
+            } catch {}
+        });
+    })
 
-    // Set up input handling for user messages
     process.stdin.setEncoding('utf8');
     process.stdin.resume();
     console.log(`[${name}] Type your message and press Enter to send:`);
@@ -65,27 +48,22 @@ async function start() {
         if (input.toString() === '\u0003') process.exit();
         
         const msg = input.toString().trim();
-        if (msg && socket.readyState === ws.OPEN) {
-            socket.write(JSON.stringify({
+        if (msg) {
+            const message = JSON.stringify({
                 type: 'chat',
                 from: name,
                 message: msg
-            }));
+            });
+            
+            // Broadcast to all peers 
+            for (const conn of swarm.connections) {
+                conn.write(message);
+            }
             console.log(`[${name}]: ${msg}`);
         }
     });
-
-    // Handle socket events
-    socket.on('connect', () => {
-        console.log(`[${name}] Connected to server`);
-    });
-    
-    socket.on('close', () => {
-        console.log(`[${name}] Disconnected from server`);
-    });
 }
 
-// Helper function to generate a keypair
 function generate_keypair() {
     const public_key = b4a.alloc(32);
     const secret_key = b4a.alloc(64);
