@@ -3,27 +3,19 @@
     "version": "1.0.0",
     "description": "DHT-Relay test for p2p communication",
     "scripts": {
+        
         "start": "node relay-server.js",
         "web": "budo web/index.js:web/bundle.js --live --open --dir web",
         "bare": "bare peer.js",
         "build": "browserify web/index.js > web/bundle.js",
-        "dev": "npm run build && npm run web",
-        "reset": "rm -rf ./storage-*"
+        "dev": "npm run build && npm run web"
     },
     "dependencies": {
         "@hyperswarm/dht-relay": "^0.4.3",
         "b4a": "^1.6.7",
-        "bare-fs": "^4.1.2",
-        "bare-https": "^2.0.0",
         "bare-process": "^4.1.2",
-        "bare-ws": "^2.0.1",
-        "bip39-mnemonic": "2.2.0",
-        "hypercore-crypto": "^3.5.0",
         "hyperdht": "^6.20.1",
         "hyperswarm": "4.10.1",
-        "protomux": "^3.10.1",
-        "sodium-universal": "^4.0.1",
-        "sodium-javascript": "0.8.0",
         "ws": "^8.18.1"
     },
     "devDependencies": {
