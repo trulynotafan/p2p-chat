@@ -140,4 +140,12 @@ button:active {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #4f4f4f;
+}
+
+.peer-count {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    padding: 5px;
+    color: var(--text-color);
 } 
