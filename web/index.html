@@ -9,15 +9,16 @@
         <h1>P2P Chat</h1>
         <div class="input-group">
             <input type="text" id="username" placeholder="Enter username">
-            <button onclick="setUsername()">Join Chat</button>
+            <button id="joinButton">Join Chat</button>
         </div>
     </div>
     
     <div id="chat" class="container chat-container hidden">
+        <div id="peerCount" class="peer-count">Peers: 0</div>
         <div id="messages" class="messages-container"></div>
         <div class="input-area">
             <input type="text" id="messageInput" placeholder="Type a message...">
-            <button onclick="sendMessage()">Send</button>
+            <button id="sendButton">Send</button>
         </div>
     </div>
     
