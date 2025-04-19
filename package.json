@@ -16,7 +16,8 @@
         "bare-process": "^4.1.2",
         "hyperdht": "^6.20.1",
         "hyperswarm": "4.10.1",
-        "ws": "^8.18.1"
+        "ws": "^8.18.1",
+        "bip39-mnemonic": "2.2.0"
     },
     "devDependencies": {
         "browserify": "^17.0.1",
